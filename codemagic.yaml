@@ -1,11 +1,9 @@
 workflows:
   android-debug-build:
-    name: Fleet Proxy - Debug Build
+    name: IP Transmitter - Debug Build
     max_build_duration: 60
     environment:
       java: 17
-      vars:
-        PACKAGE_NAME: "com.proxyfarm.node"
     scripts:
       - name: Set up local.properties
         script: |
@@ -15,9 +13,16 @@ workflows:
           chmod +x gradlew
       - name: Build debug APK
         script: |
-          ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -100
+          ./gradlew assembleDebug
+      - name: Show APK location
+        script: |
+          echo "=== Finding APK ==="
+          find . -name "*.apk" -type f
+          echo "=== Build outputs ==="
+          ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "Debug folder not found"
     artifacts:
-      - app/build/outputs/apk/debug/*.apk
+      - app/build/outputs/apk/**/*.apk
+      - app/build/outputs/**/*.apk
     publishing:
       email:
         recipients:
