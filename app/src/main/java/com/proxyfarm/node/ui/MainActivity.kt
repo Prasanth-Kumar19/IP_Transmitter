@@ -79,8 +79,7 @@ private fun FleetProxyDashboard(viewModel: MainViewModel, onOpenSettings: () -> 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Router, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp)); Spacer(Modifier.width(10.dp))
                         Column {
-                            Text("Fleet Proxy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("→ ${settingsState.vmIp}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f), fontFamily = FontFamily.Monospace)
+                            Text("IP Transmitter", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)                            Text("→ ${settingsState.vmIp}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f), fontFamily = FontFamily.Monospace)
                         }
                     }
                 },
