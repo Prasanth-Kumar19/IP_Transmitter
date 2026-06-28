@@ -1,0 +1,28 @@
+workflows:
+  android-debug-build:
+    name: IP Transmitter - Debug Build
+    max_build_duration: 60
+    environment:
+      java: 17
+    scripts:
+      - name: Set up local.properties
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+      - name: Make gradlew executable
+        script: |
+          chmod +x gradlew
+      - name: Build debug APK
+        script: |
+          ./gradlew assembleDebug
+      - name: Verify APK
+        script: |
+          find . -name "*.apk" -type f
+    artifacts:
+      - app/build/outputs/apk/debug/app-debug.apk
+    publishing:
+      email:
+        recipients:
+          - prasanth@daintreetech.com
+        notify:
+          success: true
+          failure: true
