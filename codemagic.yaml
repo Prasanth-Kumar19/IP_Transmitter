@@ -1,0 +1,27 @@
+workflows:
+  android-debug-build:
+    name: Fleet Proxy - Debug Build
+    max_build_duration: 60
+    environment:
+      java: 17
+      vars:
+        PACKAGE_NAME: "com.proxyfarm.node"
+    scripts:
+      - name: Set up local.properties
+        script: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+      - name: Make gradlew executable
+        script: |
+          chmod +x gradlew
+      - name: Build debug APK
+        script: |
+          ./gradlew assembleDebug --stacktrace --info 2>&1 | tail -100
+    artifacts:
+      - app/build/outputs/apk/debug/*.apk
+    publishing:
+      email:
+        recipients:
+          - prasanth@daintreetech.com
+        notify:
+          success: true
+          failure: true
