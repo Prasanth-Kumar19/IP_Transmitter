@@ -20,7 +20,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:label="IP Transmitter"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Material3.DynamicColors.DayNight"
+        android:theme="@style/Theme.FleetProxy"
         tools:targetApi="34">
 
         <activity
