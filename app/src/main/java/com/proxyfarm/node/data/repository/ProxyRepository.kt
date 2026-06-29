@@ -37,7 +37,25 @@ class ProxyRepository(private val context: Context) {
     private val _pipelineStatus = MutableStateFlow(PipelineStatus.LOADING)
     val pipelineStatus: StateFlow<PipelineStatus> = _pipelineStatus.asStateFlow()
 
-    init { registerProxyStatusReceiver(); registerNetworkCallback(); startDashboardPoller(); repoScope.launch { refreshNetworkInfo() } }
+
+    init {
+        registerProxyStatusReceiver()
+        registerNetworkCallback()
+        startDashboardPoller()
+        repoScope.launch { refreshNetworkInfo() }
+        checkServiceRunning()
+    }
+
+    private fun checkServiceRunning() {
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        @Suppress("DEPRECATION")
+        val running = manager.getRunningServices(Integer.MAX_VALUE)
+            .any { it.service.className == "com.proxyfarm.node.service.ProxyService" }
+        if (running) {
+            Log.d(TAG, "Service already running — updating state")
+            _proxyState.value = ProxyState.Active(jobId = "active", port = appSettings.currentProxyPort)
+        }
+    }
 
     private val proxyStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
@@ -49,8 +67,20 @@ class ProxyRepository(private val context: Context) {
 
     private fun registerProxyStatusReceiver() {
         val filter = IntentFilter(ProxyService.BROADCAST_STATUS)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) context.registerReceiver(proxyStatusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        else @Suppress("UnspecifiedRegisterReceiverFlag") context.registerReceiver(proxyStatusReceiver, filter)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(
+                    proxyStatusReceiver,
+                    filter,
+                    Context.RECEIVER_EXPORTED
+                )
+            } else {
+                context.registerReceiver(proxyStatusReceiver, filter)
+            }
+            Log.d(TAG, "ProxyStatusReceiver registered")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register receiver: ${e.message}")
+        }
     }
 
     private val connectivityManager by lazy { context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }
