@@ -48,13 +48,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onToggleProxy(enable: Boolean) {
         Log.i(TAG, "onToggleProxy → enable=$enable")
-        val ctx    = getApplication<Application>().applicationContext
-        val intent = Intent(ctx, ProxyService::class.java).apply {
-            action = if (enable) ProxyService.ACTION_START else ProxyService.ACTION_STOP
-            if (enable) putExtra(ProxyService.EXTRA_JOB_ID, "manual-debug")
+        val ctx = getApplication<Application>().applicationContext
+        if (enable) {
+            val intent = Intent(ctx, ProxyService::class.java).apply {
+                action = ProxyService.ACTION_START
+                putExtra(ProxyService.EXTRA_JOB_ID, "manual-debug")
+            }
+            try {
+                ctx.startForegroundService(intent)
+                Log.i(TAG, "startForegroundService called")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to start service: ${e.message}")
+                // Fallback
+                ctx.startService(intent)
+            }
+        } else {
+            val intent = Intent(ctx, ProxyService::class.java).apply {
+                action = ProxyService.ACTION_STOP
+            }
+            ctx.startService(intent)
+            _statsSnapshot.value = ProxyStats.Snapshot()
         }
-        if (enable) ctx.startForegroundService(intent) else ctx.startService(intent)
-        if (!enable) _statsSnapshot.value = ProxyStats.Snapshot()
     }
 
     fun onRefreshDashboard() {
