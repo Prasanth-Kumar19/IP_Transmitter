@@ -19,33 +19,89 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    companion object { private const val TAG = "MainViewModel" }
+
+    companion object {
+        private const val TAG = "MainViewModel"
+    }
+
     private val repository  = ProxyRepository(application.applicationContext)
     private val appSettings = repository.appSettings
 
-    val proxyState: StateFlow<ProxyState>       = repository.proxyState.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProxyState.Idle)
-    val networkInfo: StateFlow<NetworkInfo>     = repository.networkInfo.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NetworkInfo.EMPTY)
-    val pipelineStatus: StateFlow<PipelineStatus> = repository.pipelineStatus.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PipelineStatus.LOADING)
-    val settingsState: StateFlow<SettingsState> = appSettings.settings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
+    // ── Exposed StateFlows ────────────────────────────────────────
+
+    val proxyState: StateFlow<ProxyState> = repository.proxyState
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProxyState.Idle)
+
+    val networkInfo: StateFlow<NetworkInfo> = repository.networkInfo
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NetworkInfo.EMPTY)
+
+    val pipelineStatus: StateFlow<PipelineStatus> = repository.pipelineStatus
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PipelineStatus.LOADING)
+
+    val settingsState: StateFlow<SettingsState> = appSettings.settings
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
+
     private val _statsSnapshot = MutableStateFlow(ProxyStats.Snapshot())
     val statsSnapshot: StateFlow<ProxyStats.Snapshot> = _statsSnapshot.asStateFlow()
 
+    // ── User Actions ──────────────────────────────────────────────
+
     fun onToggleProxy(enable: Boolean) {
-        val ctx = getApplication<Application>().applicationContext
-        val intent = Intent(ctx, ProxyService::class.java).apply { action = if (enable) ProxyService.ACTION_START else ProxyService.ACTION_STOP; if (enable) putExtra(ProxyService.EXTRA_JOB_ID, "manual-debug") }
+        Log.i(TAG, "onToggleProxy → enable=$enable")
+        val ctx    = getApplication<Application>().applicationContext
+        val intent = Intent(ctx, ProxyService::class.java).apply {
+            action = if (enable) ProxyService.ACTION_START else ProxyService.ACTION_STOP
+            if (enable) putExtra(ProxyService.EXTRA_JOB_ID, "manual-debug")
+        }
         if (enable) ctx.startForegroundService(intent) else ctx.startService(intent)
         if (!enable) _statsSnapshot.value = ProxyStats.Snapshot()
     }
 
-    fun onRefreshDashboard() { repository.refreshDashboardNow() }
-
-    fun onSaveSettings(vmIp: String, dashboardPort: Int, dashboardToken: String, proxyPort: Int) {
-        appSettings.saveAll(vmIp, dashboardPort, dashboardToken, proxyPort)
+    fun onRefreshDashboard() {
         repository.refreshDashboardNow()
     }
 
-    fun onResetSettings() { appSettings.resetToDefaults(); repository.refreshDashboardNow() }
-    fun updateStats(snapshot: ProxyStats.Snapshot) { _statsSnapshot.value = snapshot }
+    fun updateStats(snapshot: ProxyStats.Snapshot) {
+        _statsSnapshot.value = snapshot
+    }
 
-    override fun onCleared() { super.onCleared(); repository.cleanup() }
+    // ── Settings Actions ──────────────────────────────────────────
+
+    fun onSaveSettings(
+        vmIp:          String,
+        dashboardPort: Int,
+        dashboardToken: String,
+        proxyPort:     Int,
+        sshUser:       String,
+        sshPassword:   String,
+        sshPort:       Int,
+        remotePort:    Int
+    ) {
+        Log.i(TAG, "Saving settings → ip=$vmIp  remotePort=$remotePort")
+        appSettings.saveAll(
+            vmIp           = vmIp,
+            dashboardPort  = dashboardPort,
+            dashboardToken = dashboardToken,
+            proxyPort      = proxyPort,
+            sshUser        = sshUser,
+            sshPassword    = sshPassword,
+            sshPort        = sshPort,
+            remotePort     = remotePort
+        )
+        repository.refreshDashboardNow()
+    }
+
+    fun onResetSettings() {
+        Log.i(TAG, "Resetting settings to defaults")
+        appSettings.resetToDefaults()
+        repository.refreshDashboardNow()
+    }
+
+    // ── Lifecycle ─────────────────────────────────────────────────
+
+    override fun onCleared() {
+        super.onCleared()
+        repository.cleanup()
+        Log.d(TAG, "MainViewModel cleared")
+    }
 }

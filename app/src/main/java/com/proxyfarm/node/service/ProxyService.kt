@@ -14,6 +14,7 @@ import com.proxyfarm.node.ProxyFarmApplication.Companion.CHANNEL_PROXY_SERVICE
 import com.proxyfarm.node.proxy.HttpProxyEngine
 import com.proxyfarm.node.proxy.ProxyStats
 import com.proxyfarm.node.settings.AppSettings
+import com.proxyfarm.node.tunnel.SshTunnelManager
 import com.proxyfarm.node.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,19 +22,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/**
- * Long-running foreground service.
- *
- * Now reads the proxy port dynamically from [AppSettings] so the
- * operator can change it from the Settings screen and it takes
- * effect on the next START command.
- */
 class ProxyService : Service() {
 
     companion object {
         private const val TAG         = "ProxyService"
         const val NOTIFICATION_ID     = 1001
-        const val WAKE_LOCK_TAG       = "FleetProxy::ProxyCpuWakeLock"
+        const val WAKE_LOCK_TAG       = "IPTransmitter::ProxyCpuWakeLock"
         const val ACTION_START        = "com.proxyfarm.node.ACTION_START_PROXY"
         const val ACTION_STOP         = "com.proxyfarm.node.ACTION_STOP_PROXY"
         const val EXTRA_JOB_ID        = "extra_job_id"
@@ -46,8 +40,6 @@ class ProxyService : Service() {
     private var proxyEngine: HttpProxyEngine?    = null
     val proxyStats = ProxyStats()
     private var currentJobId  = "idle"
-
-    // Reads proxy port from SharedPreferences on each start
     private val appSettings by lazy { AppSettings(applicationContext) }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -56,10 +48,11 @@ class ProxyService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 currentJobId = intent.getStringExtra(EXTRA_JOB_ID) ?: "unknown"
-                Log.i(TAG, "START  job=$currentJobId  port=${appSettings.currentProxyPort}")
+                Log.i(TAG, "START  job=$currentJobId")
                 startForegroundWithNotification()
                 acquireWakeLock()
                 startProxyEngine()
+                startTunnel()
                 broadcastStatus(true)
             }
             ACTION_STOP -> {
@@ -67,14 +60,15 @@ class ProxyService : Service() {
                 shutdownAndStop()
             }
             else -> {
-                Log.w(TAG, "Redelivered intent — restarting")
+                Log.w(TAG, "Redelivered — restarting")
                 startForegroundWithNotification()
                 acquireWakeLock()
                 startProxyEngine()
+                startTunnel()
                 broadcastStatus(true)
             }
         }
-        return START_REDELIVER_INTENT
+        return START_STICKY
     }
 
     override fun onDestroy() {
@@ -87,25 +81,19 @@ class ProxyService : Service() {
     private fun startForegroundWithNotification() {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
     }
 
     private fun buildNotification(): Notification {
-        val tapIntent = PendingIntent.getActivity(
+        val tap = PendingIntent.getActivity(
             this, 0,
-            Intent(this, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
-            },
+            Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val stopIntent = PendingIntent.getService(
+        val stop = PendingIntent.getService(
             this, 1,
             Intent(this, ProxyService::class.java).apply { action = ACTION_STOP },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -113,10 +101,10 @@ class ProxyService : Service() {
         val port = appSettings.currentProxyPort
         return NotificationCompat.Builder(this, CHANNEL_PROXY_SERVICE)
             .setContentTitle("IP Transmitter Node Active")
-            .setContentText("Job: $currentJobId  •  Port $port")
+            .setContentText("Job: $currentJobId  •  Port $port  •  Tunnel: ${appSettings.currentVmIp}:${appSettings.currentRemotePort}")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentIntent(tapIntent)
-            .addAction(android.R.drawable.ic_delete, "Stop Proxy", stopIntent)
+            .setContentIntent(tap)
+            .addAction(android.R.drawable.ic_delete, "Stop", stop)
             .setOngoing(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
@@ -147,10 +135,10 @@ class ProxyService : Service() {
         proxyEngine = HttpProxyEngine(proxyPort = port).also { it.stats = proxyStats }
         serviceScope.launch {
             try {
-                Log.i(TAG, "Launching HttpProxyEngine on port $port")
+                Log.i(TAG, "Launching proxy on port $port")
                 proxyEngine?.start()
             } catch (e: Exception) {
-                Log.e(TAG, "ProxyEngine crashed: ${e.message}", e)
+                Log.e(TAG, "Engine crashed: ${e.message}", e)
                 broadcastStatus(false)
                 stopSelf()
             }
@@ -158,14 +146,37 @@ class ProxyService : Service() {
     }
 
     private fun stopProxyEngine() {
-        try { proxyEngine?.stop() } catch (e: Exception) { Log.w(TAG, "Stop error: ${e.message}") }
+        try { proxyEngine?.stop() } catch (_: Exception) {}
         proxyEngine = null
+    }
+
+    // ── SSH Tunnel ────────────────────────────────────────────────
+
+    private fun startTunnel() {
+        val password = appSettings.currentSshPassword
+        if (password.isBlank()) {
+            Log.w(TAG, "SSH password not set — skipping tunnel")
+            return
+        }
+        serviceScope.launch {
+            Log.i(TAG, "Starting SSH tunnel → ${appSettings.currentVmIp}:${appSettings.currentRemotePort}")
+            val ok = SshTunnelManager.startTunnel(
+                serverHost     = appSettings.currentVmIp,        // ← dynamic from settings
+                serverPort     = appSettings.currentSshPort,
+                serverUser     = appSettings.currentSshUser,
+                serverPassword = password,
+                localPort      = appSettings.currentProxyPort,
+                remotePort     = appSettings.currentRemotePort
+            )
+            Log.i(TAG, if (ok) "✅ Tunnel active" else "⚠ Tunnel failed — proxy still running locally")
+        }
     }
 
     // ── Shutdown ──────────────────────────────────────────────────
 
     private fun shutdownAndStop() {
         broadcastStatus(false)
+        SshTunnelManager.stopTunnel()
         stopProxyEngine()
         releaseWakeLock()
         serviceScope.cancel()
@@ -178,6 +189,5 @@ class ProxyService : Service() {
             putExtra(EXTRA_IS_RUNNING, isRunning)
             putExtra(EXTRA_JOB_ID, currentJobId)
         })
-        Log.d(TAG, "Status broadcast → isRunning=$isRunning")
     }
 }
