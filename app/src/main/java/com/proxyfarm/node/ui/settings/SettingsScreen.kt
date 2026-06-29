@@ -1,8 +1,3 @@
-📄 5. Update SettingsScreen.kt
-Path: app/src/main/java/com/proxyfarm/node/ui/settings/SettingsScreen.kt
-
-Replace entire file with:
-
 package com.proxyfarm.node.ui.settings
 
 import androidx.compose.animation.AnimatedVisibility

@@ -58,7 +58,9 @@ private fun FleetProxyApp(viewModel: MainViewModel) {
     if (showSettings) {
         SettingsScreen(
             currentSettings = settingsState,
-            onSave          = { ip, port, token, proxyPort -> viewModel.onSaveSettings(ip, port, token, proxyPort) },
+            onSave          = { ip, port, token, proxyPort, sshUser, sshPassword, sshPort, remotePort ->
+                viewModel.onSaveSettings(ip, port, token, proxyPort, sshUser, sshPassword, sshPort, remotePort)
+            },
             onReset         = { viewModel.onResetSettings() },
             onBack          = { showSettings = false }
         )
