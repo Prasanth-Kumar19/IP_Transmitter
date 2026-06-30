@@ -33,10 +33,8 @@ class ProxyRepository(private val context: Context) {
         private const val POLL_INTERVAL_MS = 30_000L
     }
 
-    private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    // ── Initialize appSettings immediately (not lazy) ─────────────
-    val appSettings = AppSettings(context)
+    private val repoScope   = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val appSettings         = AppSettings(context)
 
     private val _proxyState     = MutableStateFlow<ProxyState>(ProxyState.Idle)
     val proxyState: StateFlow<ProxyState> = _proxyState.asStateFlow()
@@ -51,50 +49,43 @@ class ProxyRepository(private val context: Context) {
         registerProxyStatusReceiver()
         registerNetworkCallback()
         startDashboardPoller()
-        // Poll service status every 2 seconds to update UI
-    repoScope.launch {
-        while (true) {
-            delay(2_000)
-            try {
-                val manager = context.getSystemService(Context.ACTIVITY_SERVICE)
-                    as android.app.ActivityManager
-                @Suppress("DEPRECATION")
-                val running = manager.getRunningServices(Integer.MAX_VALUE)
-                    .any { it.service.className == 
-                        "com.proxyfarm.node.service.ProxyService" }
-                val currentState = _proxyState.value
-                if (running && currentState !is ProxyState.Active) {
-                    _proxyState.value = ProxyState.Active(
-                        jobId = "active",
-                        port  = appSettings.currentProxyPort
-                    )
-                } else if (!running && currentState is ProxyState.Active) {
-                    _proxyState.value = ProxyState.Idle
+        startServicePoller()
+        repoScope.launch { refreshNetworkInfo() }
+    }
+
+    // ── Service Status Poller ─────────────────────────────────────
+    // Polls every 2 seconds to keep UI in sync with service state
+
+    private fun startServicePoller() {
+        repoScope.launch {
+            while (true) {
+                delay(2_000)
+                try {
+                    val manager = context.getSystemService(Context.ACTIVITY_SERVICE)
+                        as android.app.ActivityManager
+                    @Suppress("DEPRECATION")
+                    val running = manager.getRunningServices(Integer.MAX_VALUE)
+                        .any { it.service.className ==
+                            "com.proxyfarm.node.service.ProxyService" }
+                    val current = _proxyState.value
+                    if (running && current !is ProxyState.Active) {
+                        Log.d(TAG, "Poller: service running → updating to Active")
+                        _proxyState.value = ProxyState.Active(
+                            jobId = "active",
+                            port  = appSettings.currentProxyPort
+                        )
+                    } else if (!running && current is ProxyState.Active) {
+                        Log.d(TAG, "Poller: service stopped → updating to Idle")
+                        _proxyState.value = ProxyState.Idle
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Service poller error: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Service check error: ${e.message}")
             }
         }
     }
 
-    private fun checkServiceRunning() {
-        try {
-            val manager = context.getSystemService(Context.ACTIVITY_SERVICE)
-                as android.app.ActivityManager
-            @Suppress("DEPRECATION")
-            val running = manager.getRunningServices(Integer.MAX_VALUE)
-                .any { it.service.className == "com.proxyfarm.node.service.ProxyService" }
-            if (running) {
-                Log.d(TAG, "Service already running — updating state")
-                _proxyState.value = ProxyState.Active(
-                    jobId = "active",
-                    port  = appSettings.currentProxyPort
-                )
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "checkServiceRunning error: ${e.message}")
-        }
-    }
+    // ── Proxy Status Broadcast Receiver ──────────────────────────
 
     private val proxyStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(ctx: Context?, intent: Intent?) {
@@ -102,7 +93,7 @@ class ProxyRepository(private val context: Context) {
                 ProxyService.EXTRA_IS_RUNNING, false) ?: false
             val jobId = intent?.getStringExtra(
                 ProxyService.EXTRA_JOB_ID) ?: "unknown"
-            Log.d(TAG, "Broadcast received → isRunning=$isRunning job=$jobId")
+            Log.d(TAG, "Broadcast → isRunning=$isRunning job=$jobId")
             _proxyState.value = if (isRunning)
                 ProxyState.Active(jobId = jobId, port = appSettings.currentProxyPort)
             else
@@ -127,6 +118,8 @@ class ProxyRepository(private val context: Context) {
             Log.e(TAG, "Failed to register receiver: ${e.message}")
         }
     }
+
+    // ── Network Connectivity ──────────────────────────────────────
 
     private val connectivityManager by lazy {
         context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -172,6 +165,7 @@ class ProxyRepository(private val context: Context) {
             }
             val publicIp = DashboardApiClient.fetchPublicIpv4()
             _networkInfo.value = NetworkInfo(type, isCellular, publicIp)
+            Log.d(TAG, "NetworkInfo → $type  ip=$publicIp")
         } catch (e: Exception) {
             Log.e(TAG, "refreshNetworkInfo error: ${e.message}")
         }
@@ -197,6 +191,8 @@ class ProxyRepository(private val context: Context) {
         } catch (e: Exception) { "Cellular" }
     }
 
+    // ── Dashboard Polling ─────────────────────────────────────────
+
     private fun startDashboardPoller() {
         repoScope.launch {
             while (true) {
@@ -219,6 +215,8 @@ class ProxyRepository(private val context: Context) {
                 .fetchPipelineStatus(appSettings.dashboardUrl)
         }
     }
+
+    // ── Cleanup ───────────────────────────────────────────────────
 
     fun cleanup() {
         try {
