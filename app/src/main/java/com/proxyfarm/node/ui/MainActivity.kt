@@ -40,45 +40,72 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
-    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            ContextCompat.checkSelfPermission(
+                this, Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         setContent { FleetProxyTheme { FleetProxyApp(viewModel) } }
     }
 }
+
+// ═════════════════════════════════════════════════════════════════
+// App Navigation
+// ═════════════════════════════════════════════════════════════════
 
 @Composable
 private fun FleetProxyApp(viewModel: MainViewModel) {
     var showSettings by rememberSaveable { mutableStateOf(false) }
     val settingsState by viewModel.settingsState.collectAsStateWithLifecycle()
+
     if (showSettings) {
         SettingsScreen(
             currentSettings = settingsState,
-            onSave          = { ip, port, token, proxyPort, sshUser, sshPassword, sshPort, remotePort ->
-                viewModel.onSaveSettings(ip, port, token, proxyPort, sshUser, sshPassword, sshPort, remotePort)
+            onSave = { ip, port, token, proxyPort, sshUser, sshPassword,
+                       sshPort, remotePort, sshPrivateKey ->
+                viewModel.onSaveSettings(
+                    ip, port, token, proxyPort,
+                    sshUser, sshPassword, sshPort,
+                    remotePort, sshPrivateKey
+                )
             },
-            onReset         = { viewModel.onResetSettings() },
-            onBack          = { showSettings = false }
+            onReset = { viewModel.onResetSettings() },
+            onBack  = { showSettings = false }
         )
     } else {
-        FleetProxyDashboard(viewModel = viewModel, onOpenSettings = { showSettings = true })
+        FleetProxyDashboard(
+            viewModel      = viewModel,
+            onOpenSettings = { showSettings = true }
+        )
     }
 }
 
+// ═════════════════════════════════════════════════════════════════
+// Dashboard Screen
+// ═════════════════════════════════════════════════════════════════
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FleetProxyDashboard(viewModel: MainViewModel, onOpenSettings: () -> Unit) {
+private fun FleetProxyDashboard(
+    viewModel: MainViewModel,
+    onOpenSettings: () -> Unit
+) {
     val proxyState     by viewModel.proxyState.collectAsStateWithLifecycle()
     val networkInfo    by viewModel.networkInfo.collectAsStateWithLifecycle()
     val pipelineStatus by viewModel.pipelineStatus.collectAsStateWithLifecycle()
     val statsSnapshot  by viewModel.statsSnapshot.collectAsStateWithLifecycle()
     val settingsState  by viewModel.settingsState.collectAsStateWithLifecycle()
+
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
+    val scope             = rememberCoroutineScope()
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -126,14 +153,20 @@ private fun FleetProxyDashboard(viewModel: MainViewModel, onOpenSettings: () -> 
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Hero Header
+            // ── Hero Header ───────────────────────────────────────
             val gradientColors = when (proxyState) {
-                is ProxyState.Active -> listOf(ProxyBlue.copy(alpha = 0.18f), MaterialTheme.colorScheme.background)
-                is ProxyState.Idle   -> listOf(ProxyGreen.copy(alpha = 0.12f), MaterialTheme.colorScheme.background)
-                else -> listOf(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), MaterialTheme.colorScheme.background)
+                is ProxyState.Active ->
+                    listOf(ProxyBlue.copy(alpha = 0.18f), MaterialTheme.colorScheme.background)
+                is ProxyState.Idle   ->
+                    listOf(ProxyGreen.copy(alpha = 0.12f), MaterialTheme.colorScheme.background)
+                else ->
+                    listOf(
+                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        MaterialTheme.colorScheme.background
+                    )
             }
             Box(
-                modifier         = Modifier
+                modifier = Modifier
                     .fillMaxWidth()
                     .background(Brush.verticalGradient(gradientColors))
                     .padding(horizontal = 16.dp, vertical = 20.dp),
@@ -159,6 +192,7 @@ private fun FleetProxyDashboard(viewModel: MainViewModel, onOpenSettings: () -> 
                 }
             }
 
+            // ── Dashboard Cards ───────────────────────────────────
             Column(
                 modifier            = Modifier
                     .fillMaxWidth()
@@ -166,24 +200,34 @@ private fun FleetProxyDashboard(viewModel: MainViewModel, onOpenSettings: () -> 
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Spacer(Modifier.height(4.dp))
+
                 PipelineMonitorCard(
                     status    = pipelineStatus,
                     onRefresh = { viewModel.onRefreshDashboard() }
                 )
+
                 NetworkMetricsCard(networkInfo = networkInfo)
-                ProxyStatsCard(snapshot = statsSnapshot, proxyState = proxyState)
+
+                ProxyStatsCard(
+                    snapshot   = statsSnapshot,
+                    proxyState = proxyState
+                )
+
                 DebugToggleCard(
                     proxyState = proxyState,
                     onToggle   = { enabled ->
                         viewModel.onToggleProxy(enabled)
                         scope.launch {
                             snackbarHostState.showSnackbar(
-                                if (enabled) "▶ Proxy starting on port ${settingsState.proxyPort}…"
-                                else "■ Proxy stopping…"
+                                if (enabled)
+                                    "▶ Proxy starting on port ${settingsState.proxyPort}…"
+                                else
+                                    "■ Proxy stopping…"
                             )
                         }
                     }
                 )
+
                 AnimatedVisibility(
                     visible = proxyState is ProxyState.Error,
                     enter   = fadeIn() + expandVertically(),
@@ -207,6 +251,7 @@ private fun FleetProxyDashboard(viewModel: MainViewModel, onOpenSettings: () -> 
                         }
                     }
                 }
+
                 Spacer(Modifier.height(24.dp))
             }
         }
