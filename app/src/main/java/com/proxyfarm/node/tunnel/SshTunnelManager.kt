@@ -6,14 +6,6 @@ import com.jcraft.jsch.Session
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * Reverse SSH tunnel — phone connects OUT to server.
- * Supports both password and private key authentication.
- * All config comes from AppSettings (dynamic VM IP + key).
- *
- * server:remotePort → phone:localProxyPort
- * Scraper uses: http://127.0.0.1:remotePort
- */
 object SshTunnelManager {
 
     private const val TAG = "SshTunnelManager"
@@ -33,17 +25,29 @@ object SshTunnelManager {
             val jsch = JSch()
 
             when {
-                // ── Key authentication (preferred) ────────────────
                 privateKey.isNotBlank() -> {
                     Log.i(TAG, "Using private key authentication")
 
-                    // Clean key — fix any formatting issues from copy/paste
-                    val cleanKey = privateKey
+                    // Reconstruct key properly line by line
+                    val rawLines = privateKey
                         .trim()
                         .replace("\r\n", "\n")
                         .replace("\r", "\n")
+                        .split("\n")
+                        .map { it.trim() }
+                        .filter { it.isNotEmpty() }
 
-                    Log.d(TAG, "Key starts with: ${cleanKey.take(40)}")
+                    Log.d(TAG, "Key lines: ${rawLines.size}")
+                    Log.d(TAG, "First: ${rawLines.firstOrNull()}")
+                    Log.d(TAG, "Last: ${rawLines.lastOrNull()}")
+
+                    // Rebuild with proper PEM format
+                    val sb = StringBuilder()
+                    for (line in rawLines) {
+                        sb.append(line)
+                        sb.append("\n")
+                    }
+                    val cleanKey = sb.toString()
 
                     jsch.addIdentity(
                         "proxy_key",
@@ -52,7 +56,6 @@ object SshTunnelManager {
                         null
                     )
                 }
-                // ── Password authentication (fallback) ────────────
                 serverPassword.isNotBlank() -> {
                     Log.i(TAG, "Using password authentication")
                 }
@@ -64,7 +67,6 @@ object SshTunnelManager {
 
             val s = jsch.getSession(serverUser, serverHost, serverPort)
 
-            // Set password if using password auth
             if (privateKey.isBlank() && serverPassword.isNotBlank()) {
                 s.setPassword(serverPassword)
                 s.setConfig("PreferredAuthentications", "password,keyboard-interactive")
@@ -75,12 +77,9 @@ object SshTunnelManager {
             s.setConfig("StrictHostKeyChecking",  "no")
             s.setConfig("ServerAliveInterval",    "30")
             s.setConfig("ServerAliveCountMax",    "5")
-            s.setConfig("ConnectTimeout",         "30000")
             s.connect(30_000)
 
-            // Reverse tunnel: server:remotePort → phone localhost:localPort
             s.setPortForwardingR("0.0.0.0", remotePort, "127.0.0.1", localPort)
-
             session = s
             Log.i(TAG, "✅ Tunnel active: $serverHost:$remotePort → phone:$localPort")
             true
