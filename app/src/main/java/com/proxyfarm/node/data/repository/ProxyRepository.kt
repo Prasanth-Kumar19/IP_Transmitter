@@ -51,8 +51,30 @@ class ProxyRepository(private val context: Context) {
         registerProxyStatusReceiver()
         registerNetworkCallback()
         startDashboardPoller()
-        repoScope.launch { refreshNetworkInfo() }
-        checkServiceRunning()
+        // Poll service status every 2 seconds to update UI
+    repoScope.launch {
+        while (true) {
+            delay(2_000)
+            try {
+                val manager = context.getSystemService(Context.ACTIVITY_SERVICE)
+                    as android.app.ActivityManager
+                @Suppress("DEPRECATION")
+                val running = manager.getRunningServices(Integer.MAX_VALUE)
+                    .any { it.service.className == 
+                        "com.proxyfarm.node.service.ProxyService" }
+                val currentState = _proxyState.value
+                if (running && currentState !is ProxyState.Active) {
+                    _proxyState.value = ProxyState.Active(
+                        jobId = "active",
+                        port  = appSettings.currentProxyPort
+                    )
+                } else if (!running && currentState is ProxyState.Active) {
+                    _proxyState.value = ProxyState.Idle
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Service check error: ${e.message}")
+            }
+        }
     }
 
     private fun checkServiceRunning() {
