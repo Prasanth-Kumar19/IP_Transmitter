@@ -50,16 +50,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         Log.i(TAG, "onToggleProxy → enable=$enable")
         val ctx = getApplication<Application>().applicationContext
         if (enable) {
-            // Update UI immediately without waiting for broadcast
-            _statsSnapshot.value = ProxyStats.Snapshot()
             val intent = Intent(ctx, ProxyService::class.java).apply {
                 action = ProxyService.ACTION_START
                 putExtra(ProxyService.EXTRA_JOB_ID, "manual-debug")
             }
             try {
                 ctx.startForegroundService(intent)
+                Log.i(TAG, "startForegroundService called")
             } catch (e: Exception) {
-                Log.e(TAG, "startForegroundService failed: ${e.message}")
+                Log.e(TAG, "Failed to start service: ${e.message}")
                 try { ctx.startService(intent) } catch (e2: Exception) {
                     Log.e(TAG, "startService also failed: ${e2.message}")
                 }
@@ -91,7 +90,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         sshUser:       String,
         sshPassword:   String,
         sshPort:       Int,
-        remotePort:    Int
+        remotePort:    Int,
+        sshPrivateKey: String
     ) {
         Log.i(TAG, "Saving settings → ip=$vmIp  remotePort=$remotePort")
         appSettings.saveAll(
@@ -102,7 +102,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             sshUser        = sshUser,
             sshPassword    = sshPassword,
             sshPort        = sshPort,
-            remotePort     = remotePort
+            remotePort     = remotePort,
+            sshPrivateKey  = sshPrivateKey
         )
         repository.refreshDashboardNow()
     }
