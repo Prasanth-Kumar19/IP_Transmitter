@@ -81,7 +81,11 @@ class ProxyService : Service() {
     private fun startForegroundWithNotification() {
         val notification = buildNotification()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
@@ -90,18 +94,25 @@ class ProxyService : Service() {
     private fun buildNotification(): Notification {
         val tap = PendingIntent.getActivity(
             this, 0,
-            Intent(this, MainActivity::class.java).apply { flags = Intent.FLAG_ACTIVITY_SINGLE_TOP },
+            Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val stop = PendingIntent.getService(
             this, 1,
-            Intent(this, ProxyService::class.java).apply { action = ACTION_STOP },
+            Intent(this, ProxyService::class.java).apply {
+                action = ACTION_STOP
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val port = appSettings.currentProxyPort
+        val port      = appSettings.currentProxyPort
+        val remotePort = appSettings.currentRemotePort
+        val vmIp      = appSettings.currentVmIp
+
         return NotificationCompat.Builder(this, CHANNEL_PROXY_SERVICE)
             .setContentTitle("IP Transmitter Node Active")
-            .setContentText("Job: $currentJobId  •  Port $port  •  Tunnel: ${appSettings.currentVmIp}:${appSettings.currentRemotePort}")
+            .setContentText("Port $port → $vmIp:$remotePort  •  Job: $currentJobId")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(tap)
             .addAction(android.R.drawable.ic_delete, "Stop", stop)
@@ -116,7 +127,10 @@ class ProxyService : Service() {
 
     private fun acquireWakeLock() {
         val pm = getSystemService(POWER_SERVICE) as PowerManager
-        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).also {
+        wakeLock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            WAKE_LOCK_TAG
+        ).also {
             it.acquire()
             Log.d(TAG, "WakeLock acquired")
         }
@@ -132,7 +146,9 @@ class ProxyService : Service() {
     private fun startProxyEngine() {
         proxyStats.reset()
         val port = appSettings.currentProxyPort
-        proxyEngine = HttpProxyEngine(proxyPort = port).also { it.stats = proxyStats }
+        proxyEngine = HttpProxyEngine(proxyPort = port).also {
+            it.stats = proxyStats
+        }
         serviceScope.launch {
             try {
                 Log.i(TAG, "Launching proxy on port $port")
@@ -153,22 +169,26 @@ class ProxyService : Service() {
     // ── SSH Tunnel ────────────────────────────────────────────────
 
     private fun startTunnel() {
-        val password = appSettings.currentSshPassword
-        if (password.isBlank()) {
-            Log.w(TAG, "SSH password not set — skipping tunnel")
+        val privateKey = appSettings.currentSshPrivateKey
+        val password   = appSettings.currentSshPassword
+
+        if (privateKey.isBlank() && password.isBlank()) {
+            Log.w(TAG, "No SSH credentials set — skipping tunnel")
             return
         }
+
         serviceScope.launch {
             Log.i(TAG, "Starting SSH tunnel → ${appSettings.currentVmIp}:${appSettings.currentRemotePort}")
             val ok = SshTunnelManager.startTunnel(
-                serverHost     = appSettings.currentVmIp,        // ← dynamic from settings
+                serverHost     = appSettings.currentVmIp,
                 serverPort     = appSettings.currentSshPort,
                 serverUser     = appSettings.currentSshUser,
                 serverPassword = password,
+                privateKey     = privateKey,
                 localPort      = appSettings.currentProxyPort,
                 remotePort     = appSettings.currentRemotePort
             )
-            Log.i(TAG, if (ok) "✅ Tunnel active" else "⚠ Tunnel failed — proxy still running locally")
+            Log.i(TAG, if (ok) "✅ Tunnel active" else "⚠ Tunnel failed")
         }
     }
 
@@ -189,5 +209,6 @@ class ProxyService : Service() {
             putExtra(EXTRA_IS_RUNNING, isRunning)
             putExtra(EXTRA_JOB_ID, currentJobId)
         })
+        Log.d(TAG, "Status broadcast → isRunning=$isRunning")
     }
 }
