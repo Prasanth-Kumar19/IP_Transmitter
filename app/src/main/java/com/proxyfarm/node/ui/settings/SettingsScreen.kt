@@ -32,9 +32,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun SettingsScreen(
     currentSettings: SettingsState,
-    onSave: (vmIp: String, dashboardPort: Int, dashboardToken: String,
-             proxyPort: Int, sshUser: String, sshPassword: String,
-             sshPort: Int, remotePort: Int) -> Unit,
+    onSave: (
+        vmIp: String, dashboardPort: Int, dashboardToken: String,
+        proxyPort: Int, sshUser: String, sshPassword: String,
+        sshPort: Int, remotePort: Int, sshPrivateKey: String
+    ) -> Unit,
     onReset: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -47,6 +49,7 @@ fun SettingsScreen(
     var sshPassword    by rememberSaveable { mutableStateOf(currentSettings.sshPassword) }
     var sshPort        by rememberSaveable { mutableStateOf(currentSettings.sshPort.toString()) }
     var remotePort     by rememberSaveable { mutableStateOf(currentSettings.remotePort.toString()) }
+    var sshPrivateKey  by rememberSaveable { mutableStateOf(currentSettings.sshPrivateKey) }
     var showToken      by remember { mutableStateOf(false) }
     var showPassword   by remember { mutableStateOf(false) }
     var hasUnsavedChanges by remember { mutableStateOf(false) }
@@ -55,14 +58,14 @@ fun SettingsScreen(
     val scope             = rememberCoroutineScope()
 
     // ── Validation ────────────────────────────────────────────────
-    val vmIpError         = vmIp.isBlank()
-    val dashPortError     = dashboardPort.toIntOrNull()?.let { it !in 1..65535 } ?: true
-    val tokenError        = dashboardToken.isBlank()
-    val proxyPortError    = proxyPort.toIntOrNull()?.let { it !in 1..65535 } ?: true
-    val sshPortError      = sshPort.toIntOrNull()?.let { it !in 1..65535 } ?: true
-    val remotePortError   = remotePort.toIntOrNull()?.let { it !in 1..65535 } ?: true
-    val canSave           = !vmIpError && !dashPortError && !tokenError &&
-                            !proxyPortError && !sshPortError && !remotePortError
+    val vmIpError       = vmIp.isBlank()
+    val dashPortError   = dashboardPort.toIntOrNull()?.let { it !in 1..65535 } ?: true
+    val tokenError      = dashboardToken.isBlank()
+    val proxyPortError  = proxyPort.toIntOrNull()?.let { it !in 1..65535 } ?: true
+    val sshPortError    = sshPort.toIntOrNull()?.let { it !in 1..65535 } ?: true
+    val remotePortError = remotePort.toIntOrNull()?.let { it !in 1..65535 } ?: true
+    val canSave         = !vmIpError && !dashPortError && !tokenError &&
+                          !proxyPortError && !sshPortError && !remotePortError
 
     // ── Preview URL ───────────────────────────────────────────────
     val previewUrl = run {
@@ -77,10 +80,17 @@ fun SettingsScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Settings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Text("Configure VM connection", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                            fontFamily = FontFamily.Monospace)
+                        Text(
+                            "Settings",
+                            style      = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Configure VM connection",
+                            style      = MaterialTheme.typography.labelSmall,
+                            color      = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                            fontFamily = FontFamily.Monospace
+                        )
                     }
                 },
                 navigationIcon = {
@@ -119,13 +129,13 @@ fun SettingsScreen(
                             if (vmIpError) Text("IP cannot be empty", color = ProxyRed)
                             else Text("Your orchestration server public IP", color = MaterialTheme.colorScheme.onSurface.copy(0.5f))
                         },
-                        isError       = vmIpError,
-                        leadingIcon   = { Icon(Icons.Rounded.Cloud, null, modifier = Modifier.size(20.dp)) },
+                        isError         = vmIpError,
+                        leadingIcon     = { Icon(Icons.Rounded.Cloud, null, modifier = Modifier.size(20.dp)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                        singleLine    = true,
-                        modifier      = Modifier.fillMaxWidth(),
-                        shape         = RoundedCornerShape(12.dp),
-                        textStyle     = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                        singleLine      = true,
+                        modifier        = Modifier.fillMaxWidth(),
+                        shape           = RoundedCornerShape(12.dp),
+                        textStyle       = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
                     )
 
                     OutlinedTextField(
@@ -137,13 +147,13 @@ fun SettingsScreen(
                             if (dashPortError) Text("Must be 1–65535", color = ProxyRed)
                             else Text("Port your dashboard listens on", color = MaterialTheme.colorScheme.onSurface.copy(0.5f))
                         },
-                        isError       = dashPortError,
-                        leadingIcon   = { Icon(Icons.Rounded.NetworkCheck, null, modifier = Modifier.size(20.dp)) },
+                        isError         = dashPortError,
+                        leadingIcon     = { Icon(Icons.Rounded.NetworkCheck, null, modifier = Modifier.size(20.dp)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine    = true,
-                        modifier      = Modifier.fillMaxWidth(),
-                        shape         = RoundedCornerShape(12.dp),
-                        textStyle     = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                        singleLine      = true,
+                        modifier        = Modifier.fillMaxWidth(),
+                        shape           = RoundedCornerShape(12.dp),
+                        textStyle       = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
                     )
 
                     OutlinedTextField(
@@ -159,17 +169,19 @@ fun SettingsScreen(
                         leadingIcon   = { Icon(Icons.Rounded.Key, null, modifier = Modifier.size(20.dp)) },
                         trailingIcon  = {
                             IconButton(onClick = { showToken = !showToken }) {
-                                Icon(if (showToken) Icons.Rounded.Check else Icons.Rounded.Key,
-                                    null, modifier = Modifier.size(18.dp))
+                                Icon(
+                                    if (showToken) Icons.Rounded.Check else Icons.Rounded.Key,
+                                    null, modifier = Modifier.size(18.dp)
+                                )
                             }
                         },
                         visualTransformation = if (showToken) VisualTransformation.None
                                                else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        singleLine    = true,
-                        modifier      = Modifier.fillMaxWidth(),
-                        shape         = RoundedCornerShape(12.dp),
-                        textStyle     = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                        singleLine      = true,
+                        modifier        = Modifier.fillMaxWidth(),
+                        shape           = RoundedCornerShape(12.dp),
+                        textStyle       = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
                     )
                 }
             }
@@ -185,13 +197,13 @@ fun SettingsScreen(
                         if (proxyPortError) Text("Must be 1–65535", color = ProxyRed)
                         else Text("Port proxy listens on this device", color = MaterialTheme.colorScheme.onSurface.copy(0.5f))
                     },
-                    isError       = proxyPortError,
-                    leadingIcon   = { Icon(Icons.Rounded.Router, null, modifier = Modifier.size(20.dp)) },
+                    isError         = proxyPortError,
+                    leadingIcon     = { Icon(Icons.Rounded.Router, null, modifier = Modifier.size(20.dp)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine    = true,
-                    modifier      = Modifier.fillMaxWidth(),
-                    shape         = RoundedCornerShape(12.dp),
-                    textStyle     = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                    singleLine      = true,
+                    modifier        = Modifier.fillMaxWidth(),
+                    shape           = RoundedCornerShape(12.dp),
+                    textStyle       = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
                 )
             }
 
@@ -209,7 +221,7 @@ fun SettingsScreen(
                         value         = sshUser,
                         onValueChange = { sshUser = it; hasUnsavedChanges = true },
                         label         = { Text("SSH Username") },
-                        placeholder   = { Text("root", fontFamily = FontFamily.Monospace) },
+                        placeholder   = { Text("hello", fontFamily = FontFamily.Monospace) },
                         supportingText = { Text("VM SSH username", color = MaterialTheme.colorScheme.onSurface.copy(0.5f)) },
                         leadingIcon   = { Icon(Icons.Rounded.Key, null, modifier = Modifier.size(20.dp)) },
                         singleLine    = true,
@@ -221,13 +233,15 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value         = sshPassword,
                         onValueChange = { sshPassword = it; hasUnsavedChanges = true },
-                        label         = { Text("SSH Password") },
-                        supportingText = { Text("VM SSH password", color = MaterialTheme.colorScheme.onSurface.copy(0.5f)) },
+                        label         = { Text("SSH Password (optional)") },
+                        supportingText = { Text("Leave empty if using private key below", color = MaterialTheme.colorScheme.onSurface.copy(0.5f)) },
                         leadingIcon   = { Icon(Icons.Rounded.Key, null, modifier = Modifier.size(20.dp)) },
                         trailingIcon  = {
                             IconButton(onClick = { showPassword = !showPassword }) {
-                                Icon(if (showPassword) Icons.Rounded.Check else Icons.Rounded.Key,
-                                    null, modifier = Modifier.size(18.dp))
+                                Icon(
+                                    if (showPassword) Icons.Rounded.Check else Icons.Rounded.Key,
+                                    null, modifier = Modifier.size(18.dp)
+                                )
                             }
                         },
                         visualTransformation = if (showPassword) VisualTransformation.None
@@ -246,13 +260,13 @@ fun SettingsScreen(
                             if (sshPortError) Text("Must be 1–65535", color = ProxyRed)
                             else Text("Usually 22", color = MaterialTheme.colorScheme.onSurface.copy(0.5f))
                         },
-                        isError       = sshPortError,
-                        leadingIcon   = { Icon(Icons.Rounded.NetworkCheck, null, modifier = Modifier.size(20.dp)) },
+                        isError         = sshPortError,
+                        leadingIcon     = { Icon(Icons.Rounded.NetworkCheck, null, modifier = Modifier.size(20.dp)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine    = true,
-                        modifier      = Modifier.fillMaxWidth(),
-                        shape         = RoundedCornerShape(12.dp),
-                        textStyle     = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                        singleLine      = true,
+                        modifier        = Modifier.fillMaxWidth(),
+                        shape           = RoundedCornerShape(12.dp),
+                        textStyle       = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
                     )
 
                     OutlinedTextField(
@@ -264,13 +278,41 @@ fun SettingsScreen(
                             if (remotePortError) Text("Must be 1–65535", color = ProxyRed)
                             else Text("Port on VM your scraper connects to", color = MaterialTheme.colorScheme.onSurface.copy(0.5f))
                         },
-                        isError       = remotePortError,
-                        leadingIcon   = { Icon(Icons.Rounded.Router, null, modifier = Modifier.size(20.dp)) },
+                        isError         = remotePortError,
+                        leadingIcon     = { Icon(Icons.Rounded.Router, null, modifier = Modifier.size(20.dp)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine    = true,
-                        modifier      = Modifier.fillMaxWidth(),
-                        shape         = RoundedCornerShape(12.dp),
-                        textStyle     = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                        singleLine      = true,
+                        modifier        = Modifier.fillMaxWidth(),
+                        shape           = RoundedCornerShape(12.dp),
+                        textStyle       = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                    )
+
+                    // ── SSH Private Key ────────────────────────────
+                    OutlinedTextField(
+                        value         = sshPrivateKey,
+                        onValueChange = { sshPrivateKey = it; hasUnsavedChanges = true },
+                        label         = { Text("SSH Private Key") },
+                        placeholder   = {
+                            Text(
+                                "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
+                                fontFamily = FontFamily.Monospace,
+                                style      = MaterialTheme.typography.labelSmall
+                            )
+                        },
+                        supportingText = {
+                            Text(
+                                "Paste private key from: cat ~/proxy_key",
+                                color = MaterialTheme.colorScheme.onSurface.copy(0.5f)
+                            )
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.Key, null, modifier = Modifier.size(20.dp)) },
+                        minLines    = 5,
+                        maxLines    = 10,
+                        modifier    = Modifier.fillMaxWidth(),
+                        shape       = RoundedCornerShape(12.dp),
+                        textStyle   = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace
+                        )
                     )
                 }
             }
@@ -289,16 +331,24 @@ fun SettingsScreen(
             // ── Unsaved warning ───────────────────────────────────
             AnimatedVisibility(visible = hasUnsavedChanges, enter = fadeIn(), exit = fadeOut()) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Warning, null, tint = ProxyRed.copy(0.8f), modifier = Modifier.size(14.dp))
+                    Icon(
+                        Icons.Rounded.Warning, null,
+                        tint     = ProxyRed.copy(0.8f),
+                        modifier = Modifier.size(14.dp)
+                    )
                     Spacer(Modifier.width(6.dp))
-                    Text("Unsaved changes — tap Save to apply",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = ProxyRed.copy(0.8f), fontFamily = FontFamily.Monospace)
+                    Text(
+                        "Unsaved changes — tap Save to apply",
+                        style      = MaterialTheme.typography.labelSmall,
+                        color      = ProxyRed.copy(0.8f),
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
             }
 
             // ── Buttons ───────────────────────────────────────────
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
                 Button(
                     onClick = {
                         if (canSave) {
@@ -310,7 +360,8 @@ fun SettingsScreen(
                                 sshUser,
                                 sshPassword,
                                 sshPort.toIntOrNull() ?: 22,
-                                remotePort.toIntOrNull() ?: 9090
+                                remotePort.toIntOrNull() ?: 9090,
+                                sshPrivateKey
                             )
                             hasUnsavedChanges = false
                             scope.launch {
@@ -319,9 +370,11 @@ fun SettingsScreen(
                         }
                     },
                     enabled  = canSave,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape    = RoundedCornerShape(12.dp),
-                    colors   = ButtonDefaults.buttonColors(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape  = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
                         containerColor = ProxyGreen,
                         contentColor   = MaterialTheme.colorScheme.onPrimary
                     )
@@ -342,11 +395,16 @@ fun SettingsScreen(
                         sshPassword    = AppSettings.DEFAULT_SSH_PASSWORD
                         sshPort        = AppSettings.DEFAULT_SSH_PORT.toString()
                         remotePort     = AppSettings.DEFAULT_REMOTE_PORT.toString()
+                        sshPrivateKey  = AppSettings.DEFAULT_SSH_PRIVATE_KEY
                         hasUnsavedChanges = false
-                        scope.launch { snackbarHostState.showSnackbar("↺ Reset to defaults") }
+                        scope.launch {
+                            snackbarHostState.showSnackbar("↺ Reset to defaults")
+                        }
                     },
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape    = RoundedCornerShape(12.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Icon(Icons.Rounded.Refresh, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
@@ -369,13 +427,23 @@ private fun SettingsCard(
         modifier  = Modifier.fillMaxWidth(),
         shape     = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(4.dp),
-        colors    = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors    = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Icon(
+                    icon, null,
+                    tint     = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(18.dp)
+                )
                 Spacer(Modifier.width(8.dp))
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    title,
+                    style      = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
             Spacer(Modifier.height(12.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
