@@ -8,7 +8,8 @@ import kotlinx.coroutines.withContext
 
 /**
  * Reverse SSH tunnel — phone connects OUT to server.
- * All config comes from AppSettings (dynamic VM IP).
+ * Supports both password and private key authentication.
+ * All config comes from AppSettings (dynamic VM IP + key).
  *
  * server:remotePort → phone:localProxyPort
  * Scraper uses: http://127.0.0.1:remotePort
@@ -18,33 +19,57 @@ object SshTunnelManager {
     private const val TAG = "SshTunnelManager"
     private var session: Session? = null
 
-    /**
-     * @param serverHost     VM IP from AppSettings (dynamic)
-     * @param serverPort     SSH port (default 22)
-     * @param serverUser     SSH username
-     * @param serverPassword SSH password
-     * @param localPort      Proxy port on phone (e.g. 8080)
-     * @param remotePort     Port exposed on server (e.g. 9090)
-     */
     suspend fun startTunnel(
         serverHost:     String,
         serverPort:     Int    = 22,
-        serverUser:     String,
-        serverPassword: String,
-        localPort:      Int,
-        remotePort:     Int
+        serverUser:     String = "hello",
+        serverPassword: String = "",
+        privateKey:     String = "",
+        localPort:      Int    = 8080,
+        remotePort:     Int    = 9090
     ): Boolean = withContext(Dispatchers.IO) {
         try {
-            Log.i(TAG, "Starting reverse tunnel → $serverHost:$remotePort")
+            Log.i(TAG, "Starting SSH tunnel → $serverHost:$remotePort")
             val jsch = JSch()
-            val s    = jsch.getSession(serverUser, serverHost, serverPort)
-            s.setPassword(serverPassword)
+
+            when {
+                // ── Key authentication (preferred) ────────────────
+                privateKey.isNotBlank() -> {
+                    Log.i(TAG, "Using private key authentication")
+                    jsch.addIdentity(
+                        "proxy_key",
+                        privateKey.toByteArray(Charsets.UTF_8),
+                        null,
+                        null
+                    )
+                }
+                // ── Password authentication (fallback) ────────────
+                serverPassword.isNotBlank() -> {
+                    Log.i(TAG, "Using password authentication")
+                }
+                else -> {
+                    Log.e(TAG, "No authentication method provided")
+                    return@withContext false
+                }
+            }
+
+            val s = jsch.getSession(serverUser, serverHost, serverPort)
+
+            // Set password if using password auth
+            if (privateKey.isBlank() && serverPassword.isNotBlank()) {
+                s.setPassword(serverPassword)
+                s.setConfig("PreferredAuthentications", "password,keyboard-interactive")
+            } else {
+                s.setConfig("PreferredAuthentications", "publickey")
+            }
+
             s.setConfig("StrictHostKeyChecking",  "no")
             s.setConfig("ServerAliveInterval",    "30")
-            s.setConfig("ServerAliveCountMax",    "3")
+            s.setConfig("ServerAliveCountMax",    "5")
+            s.setConfig("ConnectTimeout",         "30000")
             s.connect(30_000)
 
-            // server:remotePort → phone localhost:localPort
+            // Reverse tunnel: server:remotePort → phone localhost:localPort
             s.setPortForwardingR("0.0.0.0", remotePort, "127.0.0.1", localPort)
 
             session = s
