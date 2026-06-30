@@ -36,9 +36,18 @@ object SshTunnelManager {
                 // ── Key authentication (preferred) ────────────────
                 privateKey.isNotBlank() -> {
                     Log.i(TAG, "Using private key authentication")
+
+                    // Clean key — fix any formatting issues from copy/paste
+                    val cleanKey = privateKey
+                        .trim()
+                        .replace("\r\n", "\n")
+                        .replace("\r", "\n")
+
+                    Log.d(TAG, "Key starts with: ${cleanKey.take(40)}")
+
                     jsch.addIdentity(
                         "proxy_key",
-                        privateKey.toByteArray(Charsets.UTF_8),
+                        cleanKey.toByteArray(Charsets.UTF_8),
                         null,
                         null
                     )
