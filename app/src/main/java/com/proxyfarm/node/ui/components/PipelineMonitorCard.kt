@@ -1,6 +1,3 @@
-📄 3. PipelineMonitorCard.kt
-Path: app/src/main/java/com/proxyfarm/node/ui/components/PipelineMonitorCard.kt
-
 package com.proxyfarm.node.ui.components
 
 import androidx.compose.animation.AnimatedContent
@@ -8,14 +5,32 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.Article
+import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -46,16 +61,12 @@ fun PipelineMonitorCard(
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
 
-            // ── Header ────────────────────────────────────────────
             Row(
                 modifier          = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Pipeline Monitor",
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    Text("Pipeline Monitor", style = MaterialTheme.typography.titleMedium)
                     Text(
                         text       = "listing-agent-dashboard / api/state",
                         style      = MaterialTheme.typography.labelSmall,
@@ -65,98 +76,52 @@ fun PipelineMonitorCard(
                 }
                 IconButton(onClick = onRefresh, enabled = !status.isLoading) {
                     if (status.isLoading) {
-                        CircularProgressIndicator(
-                            modifier    = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
                     } else {
-                        Icon(
-                            Icons.Rounded.Refresh,
-                            "Refresh",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        Icon(Icons.Rounded.Refresh, "Refresh", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
 
             Spacer(Modifier.height(12.dp))
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
-            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
             Spacer(Modifier.height(12.dp))
 
-            // ── Content ───────────────────────────────────────────
             AnimatedContent(
                 targetState   = status,
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                 label         = "pipeline"
             ) { s ->
                 when {
-                    s.isLoading -> LoadingContent()
-                    s.hasError  -> ErrorContent(s.errorMessage ?: "Error")
-                    else        -> PipelineContent(status = s, onRefresh = onRefresh)
+                    s.isLoading -> Box(
+                        modifier         = Modifier.fillMaxWidth().height(80.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
+                    }
+                    s.hasError -> Row(
+                        modifier          = Modifier.padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Rounded.Error, null, tint = ProxyRed, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(s.errorMessage ?: "Error", style = MaterialTheme.typography.bodySmall, color = ProxyRed)
+                    }
+                    else -> PipelineContent(status = s)
                 }
             }
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Loading
-// ─────────────────────────────────────────────────────────────────
-
 @Composable
-private fun LoadingContent() {
-    Box(
-        modifier         = Modifier.fillMaxWidth().height(80.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        CircularProgressIndicator(Modifier.size(32.dp), strokeWidth = 3.dp)
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Error
-// ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun ErrorContent(message: String) {
-    Row(
-        modifier          = Modifier.padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Icon(
-            Icons.Rounded.Error, null,
-            tint     = ProxyRed,
-            modifier = Modifier.size(20.dp)
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            message,
-            style = MaterialTheme.typography.bodySmall,
-            color = ProxyRed
-        )
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────
-// Main Pipeline Content
-// ─────────────────────────────────────────────────────────────────
-
-@Composable
-private fun PipelineContent(
-    status: PipelineStatus,
-    onRefresh: () -> Unit
-) {
+private fun PipelineContent(status: PipelineStatus) {
     Column {
-
-        // ── Pipeline status summary ───────────────────────────────
         Row(
             modifier              = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment     = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text       = "Status: ${status.pipelineStatus.uppercase()}",
                     fontWeight = FontWeight.Bold,
@@ -177,22 +142,19 @@ private fun PipelineContent(
                 color = ProxyGreen.copy(alpha = 0.15f)
             ) {
                 Text(
-                    text     = "${status.completedToday}/5 done",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                    style    = MaterialTheme.typography.labelSmall,
-                    color    = ProxyGreen,
+                    text       = "${status.completedToday}/5 done",
+                    modifier   = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                    style      = MaterialTheme.typography.labelSmall,
+                    color      = ProxyGreen,
                     fontFamily = FontFamily.Monospace
                 )
             }
         }
 
         Spacer(Modifier.height(12.dp))
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
-        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
         Spacer(Modifier.height(8.dp))
 
-        // ── Task list ─────────────────────────────────────────────
         if (status.tasks.isNotEmpty()) {
             status.tasks.forEach { task -> TaskRow(task = task) }
         } else {
@@ -204,12 +166,9 @@ private fun PipelineContent(
         }
 
         Spacer(Modifier.height(8.dp))
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
-        )
+        HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
         Spacer(Modifier.height(6.dp))
 
-        // ── Last refreshed ────────────────────────────────────────
         Text(
             "Last refreshed: ${status.lastRefreshed}",
             style      = MaterialTheme.typography.labelSmall,
@@ -217,17 +176,12 @@ private fun PipelineContent(
             fontFamily = FontFamily.Monospace
         )
 
-        // ── Live Logs ─────────────────────────────────────────────
         if (status.logs.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f)
-            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f))
             Spacer(Modifier.height(8.dp))
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Rounded.Article, null,
                     tint     = MaterialTheme.colorScheme.primary,
@@ -244,7 +198,6 @@ private fun PipelineContent(
 
             Spacer(Modifier.height(8.dp))
 
-            // Scrollable log box — matches log_dashboard.py style
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -256,16 +209,12 @@ private fun PipelineContent(
                     .padding(8.dp)
             ) {
                 val scrollState = rememberScrollState(Int.MAX_VALUE)
-
-                Column(
-                    modifier = Modifier.verticalScroll(scrollState)
-                ) {
+                Column(modifier = Modifier.verticalScroll(scrollState)) {
                     status.logs.forEach { line ->
-                        val color = logLineColor(line)
                         Text(
                             text       = line,
                             style      = MaterialTheme.typography.labelSmall,
-                            color      = color,
+                            color      = logLineColor(line),
                             fontFamily = FontFamily.Monospace,
                             modifier   = Modifier.padding(vertical = 1.dp)
                         )
@@ -276,16 +225,10 @@ private fun PipelineContent(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Task Row
-// ─────────────────────────────────────────────────────────────────
-
 @Composable
 private fun TaskRow(task: TaskInfo) {
     Row(
-        modifier          = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp),
+        modifier          = Modifier.fillMaxWidth().padding(vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
@@ -325,10 +268,6 @@ private fun TaskRow(task: TaskInfo) {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Color Helpers
-// ─────────────────────────────────────────────────────────────────
-
 @Composable
 private fun pipelineStatusColor(status: String): Color = when (status.lowercase()) {
     "running"   -> ProxyBlue
@@ -357,7 +296,7 @@ private fun taskStatusBgColor(status: String): Color = when (status.lowercase())
 
 @Composable
 private fun logLineColor(line: String): Color = when {
-    line.contains("ERROR") || line.contains("FAILED")     -> ProxyRed
+    line.contains("ERROR") || line.contains("FAILED")      -> ProxyRed
     line.contains("COMPLETED") || line.contains("SUCCESS") -> ProxyGreen
     line.contains("STARTING") || line.contains("PIPELINE") -> ProxyBlue
     line.contains("WARN") || line.contains("RETRY")        -> ProxyAmber
