@@ -11,6 +11,7 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.proxyfarm.node.ProxyFarmApplication.Companion.CHANNEL_PROXY_SERVICE
+import com.proxyfarm.node.data.network.DeviceRegistrationClient
 import com.proxyfarm.node.proxy.HttpProxyEngine
 import com.proxyfarm.node.proxy.ProxyStats
 import com.proxyfarm.node.settings.AppSettings
@@ -53,6 +54,7 @@ class ProxyService : Service() {
                 acquireWakeLock()
                 startProxyEngine()
                 startTunnel()
+                registerWithDashboard()
                 broadcastStatus(true)
             }
             ACTION_STOP -> {
@@ -65,6 +67,7 @@ class ProxyService : Service() {
                 acquireWakeLock()
                 startProxyEngine()
                 startTunnel()
+                registerWithDashboard()
                 broadcastStatus(true)
             }
         }
@@ -106,9 +109,9 @@ class ProxyService : Service() {
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val port      = appSettings.currentProxyPort
+        val port       = appSettings.currentProxyPort
         val remotePort = appSettings.currentRemotePort
-        val vmIp      = appSettings.currentVmIp
+        val vmIp       = appSettings.currentVmIp
 
         return NotificationCompat.Builder(this, CHANNEL_PROXY_SERVICE)
             .setContentTitle("IP Transmitter Node Active")
@@ -173,7 +176,7 @@ class ProxyService : Service() {
         val password   = appSettings.currentSshPassword
 
         if (privateKey.isBlank() && password.isBlank()) {
-            Log.w(TAG, "No SSH credentials set — skipping tunnel")
+            Log.w(TAG, "No SSH credentials — skipping tunnel")
             return
         }
 
@@ -189,6 +192,29 @@ class ProxyService : Service() {
                 remotePort     = appSettings.currentRemotePort
             )
             Log.i(TAG, if (ok) "✅ Tunnel active" else "⚠ Tunnel failed")
+        }
+    }
+
+    // ── Device Registration ───────────────────────────────────────
+
+    private fun registerWithDashboard() {
+        serviceScope.launch {
+            try {
+                val vmIp  = appSettings.currentVmIp
+                val token = appSettings.currentDashboardToken
+                val port  = appSettings.currentRemotePort
+                val base  = "http://$vmIp"
+
+                Log.i(TAG, "Registering device with dashboard → $base")
+                DeviceRegistrationClient.register(
+                    context       = applicationContext,
+                    dashboardBase = base,
+                    token         = token,
+                    proxyPort     = port
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Dashboard registration failed: ${e.message}")
+            }
         }
     }
 
