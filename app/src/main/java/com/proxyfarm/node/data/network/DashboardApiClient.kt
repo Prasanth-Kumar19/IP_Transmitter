@@ -15,47 +15,44 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-/**
- * Calls /api/state?token=listingbot123 — the correct endpoint
- * from the Flask dashboard server.
- *
- * Response shape:
- * {
- *   "status": "running",
- *   "current_task": "keyword",
- *   "last_updated": "2026-06-27T14:32:01",
- *   "tasks": {
- *     "keyword":             {"status": "completed", "runtime_seconds": 45},
- *     "asinvariants":        {"status": "running"},
- *     "listingrestriction":  {"status": "pending"},
- *     "trademark_inventory": {"status": "pending"},
- *     "dotin_dotcom":        {"status": "pending"}
- *   }
- * }
- */
 object DashboardApiClient {
 
     private const val TAG             = "DashboardApiClient"
     private const val CONNECT_TIMEOUT = 10_000
     private const val READ_TIMEOUT    = 15_000
 
-    // ── Pipeline State ────────────────────────────────────────────
+    // ── Fetch state + logs together ───────────────────────────────
 
-    suspend fun fetchPipelineStatus(baseUrl: String): PipelineStatus = withContext(Dispatchers.IO) {
-        try {
-            // Use /api/state endpoint — correct Flask route
-            val stateUrl = buildStateUrl(baseUrl)
-            Log.d(TAG, "Fetching state: $stateUrl")
-            val (code, body) = httpGet(stateUrl)
-            if (code != HttpURLConnection.HTTP_OK) {
-                return@withContext PipelineStatus.error("Server returned HTTP $code")
+    suspend fun fetchPipelineStatus(dashboardUrl: String): PipelineStatus =
+        withContext(Dispatchers.IO) {
+            try {
+                val stateUrl = buildApiUrl(dashboardUrl, "state")
+                val logsUrl  = buildApiUrl(dashboardUrl, "logs")
+
+                Log.d(TAG, "Fetching state: $stateUrl")
+                Log.d(TAG, "Fetching logs:  $logsUrl")
+
+                val (stateCode, stateBody) = httpGet(stateUrl)
+                val (logsCode,  logsBody)  = httpGet(logsUrl)
+
+                if (stateCode != HttpURLConnection.HTTP_OK) {
+                    return@withContext PipelineStatus.error(
+                        "Server returned HTTP $stateCode"
+                    )
+                }
+
+                val logs = if (logsCode == HttpURLConnection.HTTP_OK) {
+                    parseLogsJson(logsBody)
+                } else {
+                    emptyList()
+                }
+
+                parseStateJson(stateBody, logs)
+            } catch (e: Exception) {
+                Log.e(TAG, "fetchPipelineStatus failed: ${e.message}", e)
+                PipelineStatus.error(e.message ?: "Network error")
             }
-            parseStateJson(body)
-        } catch (e: Exception) {
-            Log.e(TAG, "fetchPipelineStatus failed: ${e.message}", e)
-            PipelineStatus.error(e.message ?: "Network error")
         }
-    }
 
     // ── Public IP ─────────────────────────────────────────────────
 
@@ -70,35 +67,46 @@ object DashboardApiClient {
     // ── URL Builder ───────────────────────────────────────────────
 
     /**
-     * Converts the dashboard URL to the state API URL.
-     * e.g. "http://34.71.36.248/dashboard?token=listingbot123"
-     *      → "http://34.71.36.248/api/state?token=listingbot123"
+     * Converts the user-entered dashboard URL to the correct API URL.
+     *
+     * Examples:
+     *   "http://34.71.36.248/dashboard?token=listingbot123"
+     *     → state: "http://34.71.36.248/api/state?token=listingbot123"
+     *     → logs:  "http://34.71.36.248/api/logs?token=listingbot123"
+     *
+     *   "http://1.2.3.4:8080/dashboard?token=mytoken"
+     *     → state: "http://1.2.3.4:8080/api/state?token=mytoken"
+     *     → logs:  "http://1.2.3.4:8080/api/logs?token=mytoken"
      */
-    private fun buildStateUrl(dashboardUrl: String): String {
+    private fun buildApiUrl(dashboardUrl: String, endpoint: String): String {
         return try {
-            val url = URL(dashboardUrl)
-            val token = url.query?.split("&")
+            val url   = URL(dashboardUrl)
+            val token = url.query
+                ?.split("&")
                 ?.find { it.startsWith("token=") }
-                ?.removePrefix("token=") ?: "listingbot123"
-            val base = "${url.protocol}://${url.host}${if (url.port != -1 && url.port != 80) ":${url.port}" else ""}"
-            "$base/api/state?token=$token"
+                ?.removePrefix("token=")
+                ?: "listingbot123"
+            val port  = url.port
+            val base  = "${url.protocol}://${url.host}${
+                if (port != -1 && port != 80) ":$port" else ""
+            }"
+            "$base/api/$endpoint?token=$token"
         } catch (e: Exception) {
-            // Fallback: replace /dashboard with /api/state
-            dashboardUrl.replace("/dashboard", "/api/state")
+            Log.w(TAG, "Could not parse dashboard URL: ${e.message}")
+            dashboardUrl
+                .replace("/dashboard", "/api/$endpoint")
         }
     }
 
-    // ── JSON Parser ───────────────────────────────────────────────
+    // ── JSON Parsers ──────────────────────────────────────────────
 
-    private fun parseStateJson(raw: String): PipelineStatus {
+    private fun parseStateJson(raw: String, logs: List<String>): PipelineStatus {
         return try {
             val json     = JSONObject(raw)
             val status   = json.optString("status", "unknown")
             val curTask  = json.optString("current_task", "—")
-            val lastUpd  = json.optString("last_updated", "")
             val tasksObj = json.optJSONObject("tasks")
 
-            // Parse individual tasks
             val tasks = mutableListOf<TaskInfo>()
             val taskDefs = listOf(
                 "keyword"             to "1. Keyword ASIN Scraper",
@@ -114,7 +122,6 @@ object DashboardApiClient {
                 tasks.add(TaskInfo(key, label, tStatus, runtime))
             }
 
-            // Map pipeline status to counts
             val activePipelines = if (status == "running") 1 else 0
             val errorCount      = if (status == "failed") 1 else 0
             val completedToday  = tasks.count { it.status == "completed" }
@@ -131,7 +138,8 @@ object DashboardApiClient {
                 errorMessage    = null,
                 pipelineStatus  = status,
                 currentTask     = curTask,
-                tasks           = tasks
+                tasks           = tasks,
+                logs            = logs
             )
         } catch (e: Exception) {
             Log.e(TAG, "JSON parse error: ${e.message}")
@@ -139,7 +147,18 @@ object DashboardApiClient {
         }
     }
 
-    // ── HTTP ──────────────────────────────────────────────────────
+    private fun parseLogsJson(raw: String): List<String> {
+        return try {
+            val json  = JSONObject(raw)
+            val array = json.optJSONArray("lines") ?: return emptyList()
+            (0 until array.length()).map { array.getString(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Logs parse error: ${e.message}")
+            emptyList()
+        }
+    }
+
+    // ── HTTP Primitive ────────────────────────────────────────────
 
     private fun httpGet(urlString: String): Pair<Int, String> {
         val conn = URL(urlString).openConnection() as HttpURLConnection
@@ -149,17 +168,23 @@ object DashboardApiClient {
                 connectTimeout = CONNECT_TIMEOUT
                 readTimeout    = READ_TIMEOUT
                 setRequestProperty("Accept",     "application/json")
-                setRequestProperty("User-Agent", "FleetProxy/1.0 Android")
+                setRequestProperty("User-Agent", "IPTransmitter/1.0 Android")
                 doInput        = true
             }
             conn.connect()
             val code   = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val body   = stream?.use { BufferedReader(InputStreamReader(it, Charsets.UTF_8)).readText() } ?: ""
-            Log.d(TAG, "GET $urlString → HTTP $code")
+            val body   = stream?.use {
+                BufferedReader(InputStreamReader(it, Charsets.UTF_8)).readText()
+            } ?: ""
+            Log.d(TAG, "GET $urlString → HTTP $code (${body.length} bytes)")
             Pair(code, body)
-        } finally { conn.disconnect() }
+        } finally {
+            conn.disconnect()
+        }
     }
+
+    // ── Helpers ───────────────────────────────────────────────────
 
     private fun utcTimestamp(): String =
         SimpleDateFormat("HH:mm:ss 'UTC'", Locale.US)
